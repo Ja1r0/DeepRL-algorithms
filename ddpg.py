@@ -4,6 +4,36 @@ import numpy as np
 import gym
 import random
 from collections import namedtuple
+import matplotlib.pyplot as plt
+
+def obs_process(frame):
+    '''
+    Parameters
+    ----------
+    frame: {ndarray} of shape (_,_,3)
+    Returns
+    -------
+    frame: {Tensor} of shape torch.Size([1,84,84])
+    '''
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    frame = cv2.resize(frame, (84, 84), interpolation=cv2.INTER_AREA)
+    frame=frame.astype('float64')
+    frame=frame/255.
+    frame=torch.from_numpy(frame)
+    frame=frame.unsqueeze(0).type(Tensor)
+    return frame
+	
+def plot_graph(mean_reward):
+	plt.figure()
+	plt.xlabel('episode')
+	plt.ylabel('mean reward')
+	plt.legend()
+	plt.plot(mean_reward)
+	plt.show()
+
+
+
+
 
 # 问题1：参数的初始化有什么作用
 class Actor_net(nn.Module):
@@ -89,6 +119,7 @@ class Ddpg:
 	update_target_frac,
 	batch_size,
 	tau,
+	gamma,
 	):
 		self.env=env
 		self.eps_start=eps_start
@@ -98,6 +129,7 @@ class Ddpg:
 		self.update_target_frac=update_target_frac
 		self.batch_size=batch_size
 		self.tau=tau
+		self.gamma=gamma
 		
 		self.act_dim=self.env.action_space.shape[0] 
 		self.obs_dim=self.env.observation_space.shape[0] 
@@ -119,26 +151,40 @@ class Ddpg:
 		if time_step % self.train_freq == 0: # 两个网络同时更新
 			samples=self.relay_buffer.sample(self.batch_size)
 			stacks=Transition(*zip(*samples))
-			obs_batch=np.array(stacks.obs)
-			act_batch=np.array(stacks.act)
-			reward_batch=np.array(stacks.act)
-			done_batch=np.array(stacks.done)
-			obs_next_batch=np.array(stacks.obs_next)
+			obs_batch=stacks.obs
+			act_batch=stacks.act
+			reward_batch=stacks.act
+			done_batch=stacks.done
+			obs_next_batch=stacks.obs_next
 			self.train_actor(obs_batch,act_batch) # 这里对两个网络的更新是用的同一批样本(?)
-			self.train_critic(reward_batch,obs_next_batch)
+			self.train_critic(obs_batch,act_batch,reward_batch,obs_next_batch)
 		if time_step % self.update_target_frac == 0: # 两个目标网络同时更新
 			self.actor_target.load_state_dict(self.actor.state_dict())
 			self.critic_target.load_state_dict(self.critic.state_dict())
 		
 	def memory(self):
+		pass
 	def train_actor(self,obs_batch,act_batch):
-		
-		
-		
-		
-		
-	def train_critic(self,reward_batch,obs_next_batch):
-	
+		obs_batch=Variable(torch.cat(Tensor(obs_batch)))
+		act_batch=Variable(torch.cat(Tensor(act_batch)))
+		l=-self.critic(obs_batch,self.actor(obs_batch))
+		loss=torch.mean(l)
+		self.actor.zero_grad()
+		loss.backward()
+		optim=nn.Adam()
+		optim.step()		
+	def train_critic(self,obs_batch,act_batch,reward_batch,obs_next_batch):
+		reward_batch=Variable(torch.cat(Tensor(reward_batch)))
+		obs_next_batch=Variable(torch.cat(Tensor(obs_next_batch)))
+		obs_batch=Variable(torch.cat(Tensor(obs_batch)))
+		act_batch=Variable(torch.cat(Tensor(act_batch)))
+		target_batch=reward_batch+self.gamma*self.critic_target(obs_next_batch,self.actor_target(obs_next_batch))
+		actual_batch=self.critic(obs_batch,act_batch)
+		loss=nn.MSELoss(target_batch,actual_batch)
+		self.critic.zero_grad()
+		loss.backward()
+		optim=nn.Adam()
+		optim.step()
 use_gpu=torch.cuda.is_available()
 FloatTensor=torch.cuda.FloatTensor if use_gpu else torch.FloatTensor
 Tensor=FloatTensor
@@ -148,5 +194,42 @@ Transition=namedtuple('Transition',['obs','act','reward','done','obs_next'])
 ###
 def play():
 	env=gym.make(env_id)
+	action0=env.action_space.sample()
+	obs0,_,_,_=env.step(action0)
+	obs0=obs_process(obs0)
+	obs=torch.cat((obs0,obs0,obs0,obs0),0) # {Tensor}
+	time_step=0
+	reward_list=[]
+	epi_reward=[]
+	mean_reward=[]
+	agent=Ddpg()
+	plt.ion()
+	for epi_num in range(max_episode):
+		action=agent.actor(obs)
+		obs_next,reward,done,info=env.step(action)
+		
+		transition=Transition(obs,action,reward,done,obs_next)
+		obs=torch.cat((obs[1:,:,:],obs_next),0)
+		reward_list.append(reward)
+		agent.update(time_step,epi_num,transition)
+		step+=1
+		if done:
+			epi_total_reward=sum(reward_list)
+			epi_reward.append(epi_total_reward)
+			mean100=np.mean(epi_reward[-101:-1])
+			mean_reward.append(mean100)
+			plot_graph(mean_reward)
+			obs=env.reset()
+			print(print('episode %d timestep %d : threshold=%.5f total reward=%.2f'
+			%(epi_num,time_step,epi_total_reward))
+			break
+	
+if __name__ == '__main__':
+    play()
+	
+	
+	
+	
+	
 	
 	
