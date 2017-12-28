@@ -5,7 +5,7 @@ import gym
 import random
 from collections import namedtuple
 
-# 问题1：参数的输出化有什么作用
+# 问题1：参数的初始化有什么作用
 class Actor_net(nn.Module):
 	def __init__(self,obs_dim,act_dim):
 		super(Actor_net,self).__init__()
@@ -33,6 +33,13 @@ class Actor_net(nn.Module):
 	def forward(self,x):
 		out=self.layers(x)
 		return out
+	def train(self,samples):
+		
+		
+		
+		
+		
+		
 class Critic_net(nn.Module):
 	def __init__(self,obs_dim,act_dim):
 		super(Critic_net,self).__init__()
@@ -81,6 +88,7 @@ class Ddpg:
 	train_freq,
 	update_target_frac,
 	batch_size,
+	tau,
 	):
 		self.env=env
 		self.eps_start=eps_start
@@ -89,7 +97,7 @@ class Ddpg:
 		self.train_freq=train_freq
 		self.update_target_frac=update_target_frac
 		self.batch_size=batch_size
-		
+		self.tau=tau
 		
 		self.act_dim=self.env.action_space.shape[0] 
 		self.obs_dim=self.env.observation_space.shape[0] 
@@ -108,21 +116,37 @@ class Ddpg:
 	def update(self,time_step,episode_num,trainsition): # time_step should start from 0
 		self.epsilon=self.eps_start-(self.eps_start-self.eps_end)/self.eps_frac*time_step
 		self.replay_buffer.update(transition)
-		if time_step % self.train_freq == 0:
+		if time_step % self.train_freq == 0: # 两个网络同时更新
 			samples=self.relay_buffer.sample(self.batch_size)
-			self.actor.train(samples) # 这里对两个网络的更新是用的同一批样本(?)
-			self.critic.train(samples)
-		if time_step % self.update_target_frac == 0:
+			stacks=Transition(*zip(*samples))
+			obs_batch=np.array(stacks.obs)
+			act_batch=np.array(stacks.act)
+			reward_batch=np.array(stacks.act)
+			done_batch=np.array(stacks.done)
+			obs_next_batch=np.array(stacks.obs_next)
+			self.train_actor(obs_batch,act_batch) # 这里对两个网络的更新是用的同一批样本(?)
+			self.train_critic(reward_batch,obs_next_batch)
+		if time_step % self.update_target_frac == 0: # 两个目标网络同时更新
 			self.actor_target.load_state_dict(self.actor.state_dict())
 			self.critic_target.load_state_dict(self.critic.state_dict())
 		
 	def memory(self):
+	def train_actor(self,obs_batch,act_batch):
+		
+		
+		
+		
+		
+	def train_critic(self,reward_batch,obs_next_batch):
 	
+use_gpu=torch.cuda.is_available()
+FloatTensor=torch.cuda.FloatTensor if use_gpu else torch.FloatTensor
+Tensor=FloatTensor
 ### parameters ###
 env_id='Pendulum-v0'
-
+Transition=namedtuple('Transition',['obs','act','reward','done','obs_next'])
 ###
 def play():
 	env=gym.make(env_id)
-	Transition=namedtuple('Transition',['obs','act','reward','done'])
+	
 	
