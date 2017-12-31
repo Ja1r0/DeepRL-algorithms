@@ -15,13 +15,13 @@ from utils import *
 ### parameters ###
 env_id = 'Pendulum-v0'
 Max_episode =20000
-Train_freq=4
-Update_target_frac=100
-Batch_size=32
-Tau=0.01
-Gamma=0.9
-Capacity=10000
-Observe=50
+Train_freq=1
+Update_target_frac=1
+Batch_size=64
+Tau=0.001
+Gamma=0.99
+Capacity=1000000
+Observe=10000
 
 ###
 
@@ -79,7 +79,7 @@ class Ddpg:
         loss = torch.mean(l)
         self.actor.zero_grad()
         loss.backward()
-        optimizer = optim.Adam(self.actor.parameters(),lr=1e-3) # initial lr=1e-4
+        optimizer = optim.Adam(self.actor.parameters(),lr=1e-4) # initial lr=1e-4
         optimizer.step()
 
     def train_critic(self, obs_batch, act_batch, reward_batch, done_batch, obs_next_batch):
@@ -95,7 +95,7 @@ class Ddpg:
         output=loss(actual_batch,target_batch)
         self.critic.zero_grad()
         output.backward()
-        optimizer = optim.Adam(self.critic.parameters(),lr=3e-3, weight_decay=1e-2) # initial lr=1e-3
+        optimizer = optim.Adam(self.critic.parameters(),lr=1e-3, weight_decay=1e-2) # initial lr=1e-3
         optimizer.step()
 
 
@@ -104,7 +104,7 @@ FloatTensor = torch.cuda.FloatTensor if use_gpu else torch.FloatTensor
 Tensor = FloatTensor
 Transition = namedtuple('Transition', ['obs', 'act', 'reward',  'obs_next','done'])
 
-def play(max_timestep=1000000):
+def play(max_timestep=10000000000):
     env = gym.make(env_id)
     act_dim = env.action_space.shape[0]
     obs_dim = env.observation_space.shape[0]
