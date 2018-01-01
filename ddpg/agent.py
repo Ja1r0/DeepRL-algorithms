@@ -14,15 +14,18 @@ from utils import *
 # 问题1：参数的初始化有什么作用
 ### parameters ###
 env_id = 'Pendulum-v0'
-Max_episode =20000
+Max_episode =200
+Maxsteps_per_epi=200
 Train_freq=1
 Update_target_frac=1
-Batch_size=64
+Batch_size=32
 Tau=0.001
 Gamma=0.99
-Capacity=1000000
+Capacity=10000
 Observe=10000
-
+A_lr=1e-4
+C_lr=1e-3
+Render=True
 ###
 
 class Ddpg:
@@ -47,15 +50,18 @@ class Ddpg:
         self.actor_target = Actor_net(obs_dim, act_dim).cuda()
         self.critic = Critic_net(obs_dim, act_dim).cuda()
         self.critic_target = Critic_net(obs_dim, act_dim).cuda()
+        self.a_lr=A_lr
+        self.c_lr=C_lr
         for param in self.actor_target.parameters():
             param.requires_grad=False
         for param in self.critic_target.parameters():
             param.requires_grad=False
-    def action(self, obs, explore_noise):
+    def action(self, obs, explore_noise,act_low,act_high):
         action = self.actor.forward(obs).data.cpu().numpy()  # {ndarray}
         noise = np.array(explore_noise.noise())
         action_noise = action.squeeze(0) + noise
-        return action_noise
+        action=np.clip(action_noise,act_low,act_high)
+        return action
 
     def update(self, time_step,transition):  # time_step should start from 0
         self.memory.add(transition)
@@ -79,7 +85,7 @@ class Ddpg:
         loss = torch.mean(l)
         self.actor.zero_grad()
         loss.backward()
-        optimizer = optim.Adam(self.actor.parameters(),lr=1e-4) # initial lr=1e-4
+        optimizer = optim.Adam(self.actor.parameters(),lr=self.a_lr) # initial lr=1e-4
         optimizer.step()
 
     def train_critic(self, obs_batch, act_batch, reward_batch, done_batch, obs_next_batch):
@@ -95,7 +101,7 @@ class Ddpg:
         output=loss(actual_batch,target_batch)
         self.critic.zero_grad()
         output.backward()
-        optimizer = optim.Adam(self.critic.parameters(),lr=1e-3, weight_decay=1e-2) # initial lr=1e-3
+        optimizer = optim.Adam(self.critic.parameters(),lr=self.c_lr, weight_decay=1e-2) # initial lr=1e-3
         optimizer.step()
 
 
@@ -104,27 +110,32 @@ FloatTensor = torch.cuda.FloatTensor if use_gpu else torch.FloatTensor
 Tensor = FloatTensor
 Transition = namedtuple('Transition', ['obs', 'act', 'reward',  'obs_next','done'])
 
-def play(max_timestep=10000000000):
+def play():
     env = gym.make(env_id)
+    env=env.unwrapped
+    env.seed(1)
     act_dim = env.action_space.shape[0]
     obs_dim = env.observation_space.shape[0]
     agent = Ddpg(act_dim=act_dim,obs_dim=obs_dim)
     explore_noise=OUNoise(act_dim)
     epi_num = 0
+    time_step=0
     reward_list = []
     epi_reward = []
     mean_reward = []
     plt.ion()
     obs_np = env.reset()
     obs = Variable(torch.unsqueeze(Tensor(obs_np),0))
-    for time_step in range(max_timestep):
-        env.render()
-        action = agent.action(obs,explore_noise) # size:(1,)
+    while True:
+        if Render:
+            env.render()
+        action = agent.action(obs,explore_noise,env.action_space.low,env.action_space.high) # size:(1,)
         obs_next, reward, done, info = env.step(action)
         transition = Transition(obs_np, action, reward,  obs_next,done)
         reward_list.append(reward)
         agent.update(time_step, transition)
-        if done:
+        time_step += 1
+        if done or time_step%Maxsteps_per_epi==0:
             epi_total_reward = sum(reward_list)
             reward_list=[]
             epi_reward.append(epi_total_reward)

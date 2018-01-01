@@ -5,7 +5,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 import random
 from collections import namedtuple
-import numpy.random as nr
 import gym
 
 def soft_update(new,old,tau):
@@ -54,12 +53,13 @@ class OUNoise:
 
     def noise(self):
         x = self.state
-        dx = self.theta * (self.mu - x) + self.sigma * nr.randn(len(x))
+        dx = self.theta * (self.mu - x) + self.sigma * np.random.randn(len(x))
         self.state = x + dx
         return self.state
 
 
 if __name__ == '__main__':
+    '''
     Transition = namedtuple('Transition', ['obs', 'act', 'reward', 'done', 'obs_next'])
     obs=np.random.randn(3)
     obs_next=np.random.randn(3)
@@ -93,3 +93,16 @@ if __name__ == '__main__':
     explor_noise.reset()
     out=explor_noise.noise()
     print(out)
+    '''
+    env=gym.make('Pendulum-v0')
+    act_dim = env.action_space.shape[0]
+    ou = OUNoise(act_dim, mu=0, theta=0.15, sigma=0.3)
+    states = []
+    for i in range(100000):
+        if i%200==0:
+            ou.reset()
+        states.append(ou.noise()[0])
+    import matplotlib.pyplot as plt
+
+    plt.plot(states)
+    plt.show()
