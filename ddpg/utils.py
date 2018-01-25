@@ -18,6 +18,21 @@ def plot_graph(mean_reward):
     plt.xlabel('episode')
     plt.ylabel('mean reward')
     plt.pause(0.001)
+class epsilon_greedy:
+    def __init__(self,eps_start,eps_end,eps_frac):
+        self.eps_start=eps_start
+        self.eps_end=eps_end
+        self.eps_frac=eps_frac
+        self.eps=self.eps_start
+    def choose_action(self,actor,obs,env):
+        prob=np.random.random_sample()
+        if prob<self.eps:
+            action=env.action_space.sample()
+        else:
+            action=actor(obs)
+        return action
+    def updata(self,time_step):
+        self.eps=self.eps_start-(self.eps_start-self.eps_end)/self.eps_frac*time_step
 
 Transition = namedtuple('Transition', ['obs', 'act', 'reward',  'obs_next','done'])
 class Replay_buffer:
@@ -29,7 +44,7 @@ class Replay_buffer:
         action=transition.act
         reward=np.array([transition.reward])
         obs_next=transition.obs_next
-        done=np.array([float(transition.done)])
+        done=np.array([float(transition.done==False)])
         sample=Transition(obs,action,reward,obs_next,done)
         self.buffer.append(sample)
         self.buffer = self.buffer[-self.capacity:]
@@ -94,14 +109,10 @@ if __name__ == '__main__':
     out=explor_noise.noise()
     print(out)
     '''
-    env=gym.make('Pendulum-v0')
-    act_dim = env.action_space.shape[0]
-    ou = OUNoise(act_dim, mu=0, theta=0.15, sigma=0.3)
+    ou = OUNoise(3)
     states = []
-    for i in range(100000):
-        if i%200==0:
-            ou.reset()
-        states.append(ou.noise()[0])
+    for i in range(1000):
+        states.append(ou.noise())
     import matplotlib.pyplot as plt
 
     plt.plot(states)

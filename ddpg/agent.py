@@ -19,13 +19,13 @@ Maxsteps_per_epi=200
 Train_freq=1
 Update_target_frac=1
 Batch_size=32
-Tau=0.001
-Gamma=0.99
+Tau=0.01
+Gamma=0.9
 Capacity=10000
 Observe=10000
-A_lr=1e-4
-C_lr=1e-3
-Render=True
+A_lr=1e-3
+C_lr=2e-3
+Render=False
 ###
 
 class Ddpg:
@@ -37,7 +37,8 @@ class Ddpg:
                  gamma=Gamma,
                  capacity=Capacity,
                  act_dim=1,
-                 obs_dim=3
+                 obs_dim=3,
+                 var=3.0
                  ):
         self.train_freq = train_freq
         self.update_target_frac = update_target_frac
@@ -46,20 +47,20 @@ class Ddpg:
         self.gamma = gamma
         self.memory = Replay_buffer(capacity)
         self.observe=Observe
-        self.actor = Actor_net(obs_dim, act_dim).cuda()
-        self.actor_target = Actor_net(obs_dim, act_dim).cuda()
-        self.critic = Critic_net(obs_dim, act_dim).cuda()
-        self.critic_target = Critic_net(obs_dim, act_dim).cuda()
+        self.actor = Actor_simple(obs_dim, act_dim).cuda()
+        self.actor_target = Actor_simple(obs_dim, act_dim).cuda()
+        self.critic = Critic_simple(obs_dim, act_dim).cuda()
+        self.critic_target = Critic_simple(obs_dim, act_dim).cuda()
         self.a_lr=A_lr
         self.c_lr=C_lr
+        self.var=var
         for param in self.actor_target.parameters():
             param.requires_grad=False
         for param in self.critic_target.parameters():
             param.requires_grad=False
-    def action(self, obs, explore_noise,act_low,act_high):
+    def action(self, obs, noise,act_low,act_high):
         action = self.actor.forward(obs).data.cpu().numpy()  # {ndarray}
-        noise = np.array(explore_noise.noise())
-        action_noise = action.squeeze(0) + noise
+        action_noise = np.random.normal(action.squeeze(0),noise)
         action=np.clip(action_noise,act_low,act_high)
         return action
 
@@ -70,19 +71,20 @@ class Ddpg:
             trans = Transition(*zip(*samples))
             obs_batch = np.stack(trans.obs)
             act_batch = np.stack(trans.act)
-            reward_batch = np.stack(trans.act)
+            reward_batch = np.stack(trans.reward)
             done_batch = np.stack(trans.done)
             obs_next_batch = np.stack(trans.obs_next)
             self.train_actor(obs_batch)  # 这里对两个网络的更新是用的同一批样本(?)
             self.train_critic(obs_batch, act_batch, reward_batch, done_batch, obs_next_batch)
-        if time_step % self.update_target_frac == 0:  # 两个目标网络同时更新
-            soft_update(self.actor,self.actor_target,self.tau)
-            soft_update(self.critic,self.critic_target,self.tau)
+            self.var *= 0.9995
+            if time_step % self.update_target_frac == 0:  # 两个目标网络同时更新
+                soft_update(self.actor,self.actor_target,self.tau)
+                soft_update(self.critic,self.critic_target,self.tau)
 
     def train_actor(self, obs_batch):
         obs_batch = Variable(Tensor(obs_batch))
-        l = -self.critic(obs_batch, self.actor(obs_batch))
-        loss = torch.mean(l)
+        l = self.critic(obs_batch, self.actor(obs_batch))
+        loss = -torch.mean(l)
         self.actor.zero_grad()
         loss.backward()
         optimizer = optim.Adam(self.actor.parameters(),lr=self.a_lr) # initial lr=1e-4
@@ -118,8 +120,10 @@ def play():
     obs_dim = env.observation_space.shape[0]
     agent = Ddpg(act_dim=act_dim,obs_dim=obs_dim)
     explore_noise=OUNoise(act_dim)
+    render=Render
     epi_num = 0
     time_step=0
+    var=3.0
     reward_list = []
     epi_reward = []
     mean_reward = []
@@ -127,18 +131,21 @@ def play():
     obs_np = env.reset()
     obs = Variable(torch.unsqueeze(Tensor(obs_np),0))
     while True:
-        if Render:
+        if render:
             env.render()
-        action = agent.action(obs,explore_noise,env.action_space.low,env.action_space.high) # size:(1,)
+        action = agent.action(obs,var,env.action_space.low,env.action_space.high) # size:(1,)
         obs_next, reward, done, info = env.step(action)
-        transition = Transition(obs_np, action, reward,  obs_next,done)
+        transition = Transition(obs_np, action, reward/10,  obs_next,done)
         reward_list.append(reward)
         agent.update(time_step, transition)
         time_step += 1
+
         if done or time_step%Maxsteps_per_epi==0:
             epi_total_reward = sum(reward_list)
-            reward_list=[]
             epi_reward.append(epi_total_reward)
+            if epi_num > 70:
+                render = True
+            reward_list=[]
             mean100 = np.mean(epi_reward[-101:-1])
             mean_reward.append(mean100)
             plot_graph(mean_reward)

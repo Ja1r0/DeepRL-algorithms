@@ -31,7 +31,33 @@ class Actor_net(nn.Module):
     def forward(self, s):
         out = self.layers(s)
         return out
-
+class Actor_simple(nn.Module):
+    def __init__(self,obs_dim,act_dim):
+        super(Actor_simple,self).__init__()
+        self.fc1=nn.Linear(obs_dim,30)
+        self.relu=nn.ReLU(inplace=True)
+        self.fc2=nn.Linear(30,act_dim)
+        self.tanh=nn.Tanh()
+    def forward(self,x):
+        x=self.fc1(x)
+        x=self.relu(x)
+        x=self.fc2(x)
+        x=self.tanh(x)
+        return x
+class Critic_simple(nn.Module):
+    def __init__(self,obs_dim,act_dim):
+        super(Critic_simple,self).__init__()
+        self.fc1=nn.Linear(obs_dim+act_dim,30)
+        self.relu=nn.ReLU(inplace=True)
+        self.fc2=nn.Linear(30,1)
+    def forward(self,s,a):
+        s=s.view(s.size(0),-1)
+        a=a.view(a.size(0),-1)
+        input=torch.cat((s,a),dim=1)
+        output=self.fc1(input)
+        output=self.relu(output)
+        output=self.fc2(output)
+        return output
 
 class Critic_net(nn.Module):
     def __init__(self, obs_dim, act_dim):
@@ -88,19 +114,20 @@ if __name__ == '__main__':
     act_dim=env.action_space.sample().size
     obs_dim=obs.reshape(obs.size).size
     obs=Variable(torch.unsqueeze(Tensor(obs),0))
-    actor=Actor_net(obs_dim=obs_dim,act_dim=act_dim).cuda()
-    critic=Critic_net(obs_dim=obs_dim,act_dim=act_dim).cuda()
+    actor=Actor_simple(obs_dim=obs_dim,act_dim=act_dim).cuda()
+    critic=Critic_simple(obs_dim=obs_dim,act_dim=act_dim).cuda()
     action=actor.forward(obs)
-    act1x1=action.data.cpu().numpy()
-    act1=action.data.squeeze(0).cpu().numpy()
+    #act1x1=action.data.cpu().numpy()
+    #act1=action.data.squeeze(0).cpu().numpy()
     #print(env.step(act1))
-    print(env.step(act1x1))
-    print(env.step(env.action_space.sample()))
+    #print(env.step(act1x1))
+    #print(env.step(env.action_space.sample()))
     #print(env.action_space.sample())
     #print(act1)
     #print(act1x1)
     #print(action.data.cpu().numpy())
     value=critic.forward(obs,action)
-    #print(value)
+    print(action)
+    print(value)
 
 
