@@ -1,37 +1,34 @@
 import tensorflow.contrib.layers as layers
 import tensorflow as tf
 import numpy as np
+import gym
 import random
 
-def huber_loss():
-    pass
+def huber_loss(x,delta=1.0):
+    '''
+    https://en.wikipedia.org/wiki/Huber_loss
+    left part : quadratic
+    right part : linear
+    '''
+    return tf.where(
+        tf.abs(x)<delta,
+        tf.square(x)*0.5,
+        delta*(tf.abs(x)-0.5*delta)
+    )
 def collect_params():
     pass
-def build_cnn(input,act_num,scope,reuse=False):
-    with tf.variable_scope(scope,reuse=reuse):
-        out=input
-        with tf.variable_scope('convnet'):
-            out=layers.convolution2d(out,num_outputs=32,kernel_size=8,stride=4,activation_fn=tf.nn.relu)
-            out=layers.convolution2d(out,num_outputs=64,kernel_size=4,stride=2,activation_fn=tf.nn.relu)
-            out=layers.convolution2d(out,num_outputs=64,kernel_size=3,stride=1,activation_fn=tf.nn.relu)
-        out=layers.flatten(out)
-        with tf.variable_scope('action_value'):
-            out=layers.fully_connected(out,num_outputs=512,activation_fn=tf.nn.relu)
-            out=layers.fully_connected(out,num_outputs=act_num,activation_fn=None)
-        return out
+
 def get_available_gpus():
     from tensorflow.python.client import device_lib
     local_device_protos=device_lib.list_local_devices()
     return [x.physical_device_desc for x in local_device_protos if x.device_type=='GPU']
-def get_session():
-    tf.reset_default_graph()
-    tf_config=tf.ConfigProto(
-        inter_op_parallelism_threads=1,
-        intra_op_parallelism_threads=1
-    )
-    session=tf.Session(config=tf_config)
-    print('AVAILABLE GPUS:',get_available_gpus())
-    return session
+def sample_n_unique(samlling_f,n):
+    res=[]
+    while len(res)<n:
+        candidate=samlling_f()
+        if candidate not in res:
+            res.append(candidate)
+    return res
 
 class Replay_buffer:
     def __init__(self,size,history_frames):
@@ -86,7 +83,7 @@ class Replay_buffer:
             np.float32
         '''
         assert self.can_sample(batch_size)
-        idxes=sample_n_unique(lambda random.randint(0,self.num_in_buffer-2),batch_size)
+        idxes=sample_n_unique(lambda: random.randint(0,self.num_in_buffer-2),batch_size)
         return self._stack_sample(idxes)
 
     def store_frame(self,frame):
@@ -141,7 +138,7 @@ class Replay_buffer:
         return self._stack_obs((self.next_idx-1)%self.size)
 
     def _stack_sample(self,idxes):
-        obs_batch=np.concatenate([self._stack_obs(idx)[None] for idx in indes],0)
+        obs_batch=np.concatenate([self._stack_obs(idx)[None] for idx in idxes],0)
         act_batch=self.act[idxes]
         rew_batch=self.rew[idxes]
         next_obs_batch=np.concatenate([self._stack_obs(idx+1)[None] for idx in idxes],0)
@@ -195,3 +192,41 @@ def minimize_and_clip(optimizer,objective,var_list,clip_val=10):
         if grad is not None:
             gradients[i]=(tf.clip_by_norm(grad,clip_val),var)
     return optimizer.apply_gradients(gradients)
+
+def linear_interpolation(l,r,alpha):
+    return l+alpha*(r-l)
+
+class PiecewiseSchedule:
+    def __init__(self,endpoints,interpolation=linear_interpolation,outside_value=None):
+        '''
+        :param endpoints: [(int,int)]
+        list of pairs (time,value),when t='time',return 'value'
+        if t between 'time1' and 'time2',take interpolation between 'value1' and 'value2'
+        :param interpolation: {function}
+        the interpolation method,we use linear interpolation
+        :param outside_value: {float}
+        if t is not in the sections in 'endpoints',then return this value
+        '''
+        idxes=[e[0] for e in endpoints]
+        assert idxes==sorted(idxes)
+        self._interpolation=interpolation
+        self._outside_value=outside_value
+        self._endpoints=endpoints
+    def value(self,t):
+        for (l_t,l),(r_t,r) in zip(self._endpoints[:-1],self._endpoints[1:]):
+            if l_t<=t and t<r_t:
+                alpha=float(t-l_t)/(r_t-l_t)
+                return self._interpolation(l,r,alpha)
+        # if t do not in the time sections
+        assert self._outside_value is not None
+        return self._outside_value
+
+def get_wrapper_by_name(env, classname):
+    currentenv = env
+    while True:
+        if classname in currentenv.__class__.__name__:
+            return currentenv
+        elif isinstance(env, gym.Wrapper):
+            currentenv = currentenv.env
+        else:
+            raise ValueError("Couldn't find wrapper named %s"%classname)
